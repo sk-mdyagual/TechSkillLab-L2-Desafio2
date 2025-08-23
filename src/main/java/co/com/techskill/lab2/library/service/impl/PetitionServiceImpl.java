@@ -34,6 +34,7 @@ public class PetitionServiceImpl implements IPetitionService {
         this.bookRepository = bookRepository;
         this.petitionMapper = new PetitionMapperImpl();
     }
+
     @Override
     public Flux<PetitionDTO> findALl() {
         return petitionRepository
@@ -50,7 +51,7 @@ public class PetitionServiceImpl implements IPetitionService {
 
     @Override
     public Mono<PetitionDTO> save(PetitionDTO petitionDTO) {
-        petitionDTO.setPetitionId(UUID.randomUUID().toString().substring(0,10));
+        petitionDTO.setPetitionId(UUID.randomUUID().toString().substring(0, 10));
         petitionDTO.setSentAt(LocalDate.now());
         return petitionRepository
                 .save(petitionMapper.toEntity(petitionDTO))
@@ -80,30 +81,28 @@ public class PetitionServiceImpl implements IPetitionService {
         return petitionRepository.findAll()
                 .filter(petition -> "LEND".equals(petitionDTO.getType()))
                 .switchIfEmpty(Mono.error(new RuntimeException("Petition of type LEND not found")))
-                .flatMap(petition -> bookRepository.findByBookId(petition.getBookId())
-                        .map(book -> "Petition approved for book: " + book.getBookId())
-
+                .flatMap(
+                        petition -> bookRepository.findByBookId(petition.getBookId())
+                                .map(book -> "Petition approved for book: " + book.getBookId())
                 ).onErrorResume(e -> Mono.just("Petition failed for book: " + petitionDTO.getBookId() + e.getMessage()));
-
     }
-
 
     @Override
     public Mono<String> simulateIntermittency(PetitionDTO petitionDTO) {
         return petitionRepository.findByPetitionId(petitionDTO.getPetitionId())
                 .switchIfEmpty(Mono.error(new RuntimeException("Petition not found")))
                 .flatMap(petition -> {
-                    if (Math.random() < 0.5) {
-                        return Mono.error(new RuntimeException("Intermitence failure"));
+                            if (Math.random() < 0.5) {
+                                return Mono.error(new RuntimeException("Intermitence failure"));
+                            }
+                            return Mono.just("Petition processed: " + petition.getPetitionId());
                         }
-                        return Mono.just("Petition processed: "+petition.getPetitionId());
-                    }
                 )
                 .timeout(Duration.ofSeconds(5))
                 .transformDeferred(CircuitBreakerOperator.of(circuitBreaker))
                 //.retryWhen(Retry.max(3).filter(e -> !(e instanceof CallNotPermittedException)))
                 .retry(1)
-                .onErrorResume(e -> Mono.just("Petition failed: "+petitionDTO.getPetitionId() + " - " + e.getMessage()));
+                .onErrorResume(e -> Mono.just("Petition failed: " + petitionDTO.getPetitionId() + " - " + e.getMessage()));
 
     }
 
