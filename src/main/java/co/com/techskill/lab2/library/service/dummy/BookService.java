@@ -10,7 +10,7 @@ import java.util.List;
 
 //For challenges bc there's no database behind
 @Service
-public class BookService {
+public class BookService{
 
     private final List<BookDTO> books = new ArrayList<>();
 
