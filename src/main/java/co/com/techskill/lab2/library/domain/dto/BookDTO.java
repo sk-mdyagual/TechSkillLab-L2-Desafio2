@@ -36,6 +36,10 @@ public class BookDTO {
 
     }
 
+    public String getBookId() {
+        return bookId;
+    }
+
     public void setBookId(String bookId) {
         this.bookId = bookId;
     }
