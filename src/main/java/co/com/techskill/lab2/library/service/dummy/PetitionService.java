@@ -4,10 +4,13 @@ import co.com.techskill.lab2.library.domain.dto.PetitionDTO;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class PetitionService {
@@ -48,5 +51,59 @@ public class PetitionService {
         );
     }
 
-    //TO - DO: Challenge #1
+    //TO - DO: Challenge #2
+
+
+    static class TransientFailure extends RuntimeException {
+        TransientFailure(String msg) { super(msg); }
+    }
+
+   
+    public Flux<String> reto2() {
+        return dummyFindAll()
+                .filter(p -> "RETURN".equalsIgnoreCase(p.getType()))
+                .flatMap(p ->
+                        validateRuleAndSimulateReturn(p)
+                                .timeout(Duration.ofMillis(500)) 
+                                .retryWhen(
+                                        Retry.backoff(2, Duration.ofMillis(150)) 
+                                             .filter(ex ->
+                                                 ex instanceof TransientFailure ||
+                                                 ex instanceof java.util.concurrent.TimeoutException
+                                             )
+                                )
+                                .onErrorResume(ex -> Mono.just(fallbackReturn(p, ex))) 
+                );
+    }
+
+    private Mono<String> validateRuleAndSimulateReturn(PetitionDTO p) {
+        
+        if (p.getSentAt() != null && p.getSentAt().isBefore(LocalDate.now().minusDays(3))) {
+            return Mono.error(new IllegalStateException("RETURN expirada (>3 días)"));
+        }
+        int latency = ThreadLocalRandom.current().nextInt(100, 701); 
+        boolean transientFail = ThreadLocalRandom.current().nextInt(100) < 15; 
+
+        return Mono.defer(() -> transientFail
+                ? Mono.<String>error(new TransientFailure("Falla transitoria"))
+                : Mono.just("RETURN OK id=%s t=%dms".formatted(p.getPetitionId(), latency)))
+            .delayElement(Duration.ofMillis(latency));
+    }
+
+    private String fallbackReturn(PetitionDTO p, Throwable ex) {
+        if (ex instanceof IllegalStateException) {
+            return "[FALLBACK] id=%s → Rechazada por plazo".formatted(p.getPetitionId());
+        }
+        if (ex instanceof java.util.concurrent.TimeoutException) {
+            return "[FALLBACK] id=%s → Timeout".formatted(p.getPetitionId());
+        }
+        if (ex instanceof TransientFailure) {
+            return "[FALLBACK] id=%s → Transitorio (reintentos agotados)".formatted(p.getPetitionId());
+        }
+        return "[FALLBACK] id=%s → Error: %s".formatted(p.getPetitionId(), ex.getMessage());
+    }
+
+
+
+
 }
